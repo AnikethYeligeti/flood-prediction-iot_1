@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>FloodSense IoT — Flood Prediction Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Sora:wght@300;400;600;700;800&display=swap');
+
+  :root {
+    --bg: #050d1a;
+    --surface: #0b1628;
+    --card: #0f1f38;
+    --border: #1a3050;
+    --accent: #00d4ff;
+    --accent2: #0066ff;
+    --warn: #f59e0b;
+    --danger: #f97316;
+    --critical: #ef4444;
+    --safe: #22c55e;
+    --text: #e2eaf6;
+    --muted: #5a7a9a;
+    --font-mono: 'Space Mono', monospace;
+    --font-ui: 'Sora', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-ui);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Animated grid background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ── HEADER ── */
+  header {
+    position: relative;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 2rem;
+    background: rgba(11,22,40,0.9);
+    border-bottom: 1px solid var(--border);
+    backdrop-filter: blur(10px);
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .logo-icon {
+    width: 42px; height: 42px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.4rem;
+  }
+
+  .logo-text h1 { font-size: 1.15rem; font-weight: 800; letter-spacing: -0.5px; }
+  .logo-text p  { font-size: 0.7rem; color: var(--muted); font-family: var(--font-mono); }
+
+  .header-status {
+    display: flex; align-items: center; gap: 0.5rem;
+    font-size: 0.75rem; color: var(--muted); font-family: var(--font-mono);
+  }
+
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--safe);
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(1.4); }
+  }
+
+  /* ── LAYOUT ── */
+  main {
+    position: relative; z-index: 1;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 1.5rem;
+    display: grid;
+    gap: 1.25rem;
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+
+  /* ── CARDS ── */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1.25rem;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.3s;
+  }
+
+  .card:hover { border-color: rgba(0,212,255,0.3); }
+
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+
+  .card:hover::before { opacity: 1; }
+
+  .card-title {
+    font-size: 0.65rem;
+    font-family: var(--font-mono);
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin-bottom: 0.75rem;
+  }
+
+  /* ── RISK METER ── */
+  .risk-card {
+    grid-column: 1 / 2;
+    grid-row: 1;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center;
+    text-align: center;
+    min-height: 220px;
+  }
+
+  .risk-score-ring {
+    position: relative;
+    width: 140px; height: 140px;
+    margin: 0.5rem auto;
+  }
+
+  .risk-score-ring svg { transform: rotate(-90deg); }
+
+  .risk-score-center {
+    position: absolute;
+    inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+  }
+
+  .risk-value {
+    font-size: 2.4rem; font-weight: 800;
+    font-family: var(--font-mono);
+    line-height: 1;
+    transition: color 0.5s;
+  }
+
+  .risk-label {
+    font-size: 0.65rem;
+    font-family: var(--font-mono);
+    color: var(--muted);
+    margin-top: 2px;
+  }
+
+  .alert-badge {
+    margin-top: 0.75rem;
+    padding: 0.35rem 1.2rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    transition: background 0.5s, color 0.5s;
+  }
+
+  /* ── STAT CARDS ── */
+  .stat-card {
+    display: flex; flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  .stat-value {
+    font-size: 2rem; font-weight: 800;
+    font-family: var(--font-mono);
+    color: var(--accent);
+    line-height: 1;
+  }
+
+  .stat-unit {
+    font-size: 0.75rem; color: var(--muted);
+    font-family: var(--font-mono);
+  }
+
+  .stat-bar {
+    height: 4px; background: var(--border);
+    border-radius: 4px; overflow: hidden;
+    margin-top: 0.5rem;
+  }
+
+  .stat-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.8s ease;
+    background: linear-gradient(90deg, var(--accent2), var(--accent));
+  }
+
+  /* ── PIPELINE STATUS ── */
+  .pipeline-card { grid-column: 1 / 4; }
+
+  .pipeline-steps {
+    display: flex; align-items: center; gap: 0;
+    margin-top: 0.5rem;
+  }
+
+  .pipe-step {
+    flex: 1; text-align: center;
+    padding: 0.75rem 0.5rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0;
+    position: relative;
+    transition: all 0.4s;
+  }
+
+  .pipe-step:first-child { border-radius: 10px 0 0 10px; }
+  .pipe-step:last-child  { border-radius: 0 10px 10px 0; }
+
+  .pipe-step.active {
+    background: rgba(0,212,255,0.1);
+    border-color: var(--accent);
+  }
+
+  .pipe-step.done {
+    background: rgba(34,197,94,0.08);
+    border-color: rgba(34,197,94,0.4);
+  }
+
+  .pipe-step-icon { font-size: 1.3rem; margin-bottom: 0.2rem; }
+  .pipe-step-label { font-size: 0.6rem; font-family: var(--font-mono); color: var(--muted); text-transform: uppercase; }
+  .pipe-step-count { font-size: 0.85rem; font-weight: 700; color: var(--text); margin-top: 0.1rem; }
+
+  .pipe-arrow { color: var(--muted); font-size: 1rem; padding: 0 2px; }
+
+  /* ── CHART CARDS ── */
+  .chart-card { grid-column: span 3; }
+  .chart-2col { grid-column: span 2; }
+  .chart-1col { grid-column: span 1; }
+
+  .chart-container { height: 200px; margin-top: 0.5rem; }
+
+  /* ── SENSOR GRID ── */
+  .sensor-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 0.65rem;
+    margin-top: 0.5rem;
+  }
+
+  .sensor-tile {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.75rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+  }
+
+  .sensor-tile .sid { color: var(--accent); font-size: 0.65rem; font-weight: 700; margin-bottom: 4px; }
+  .sensor-tile .loc { color: var(--muted); font-size: 0.6rem; margin-bottom: 6px; }
+  .sensor-tile .val { font-size: 1.1rem; font-weight: 700; color: var(--text); }
+  .sensor-tile .unit { color: var(--muted); font-size: 0.6rem; }
+  .sensor-tile .badge {
+    display: inline-block; margin-top: 4px;
+    padding: 1px 8px; border-radius: 999px;
+    font-size: 0.55rem; font-weight: 700; letter-spacing: 1px;
+  }
+
+  /* ── BUTTONS ── */
+  .btn-row { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
+
+  .btn {
+    padding: 0.6rem 1.4rem;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all 0.25s;
+    display: flex; align-items: center; gap: 0.5rem;
+  }
+
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); font-weight: 700; }
+  .btn.primary:hover { filter: brightness(1.15); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .spinner {
+    width: 12px; height: 12px;
+    border: 2px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    display: none;
+  }
+
+  .loading .spinner { display: inline-block; }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── LOG ── */
+  .log-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    height: 100px;
+    overflow-y: auto;
+    padding: 0.5rem;
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    color: var(--muted);
+    margin-top: 0.75rem;
+  }
+
+  .log-line { padding: 1px 0; }
+  .log-line .ts { color: var(--accent2); }
+  .log-line.ok  .msg { color: var(--safe); }
+  .log-line.err .msg { color: var(--critical); }
+  .log-line.info .msg { color: var(--text); }
+
+  /* ── METRICS TABLE ── */
+  .metrics-table { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 0.75rem; margin-top: 0.5rem; }
+  .metrics-table th { color: var(--muted); font-weight: 400; text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--border); }
+  .metrics-table td { padding: 4px 8px; border-bottom: 1px solid rgba(26,48,80,0.5); }
+  .metrics-table tr:last-child td { border-bottom: none; }
+
+  /* ── RESPONSIVE ── */
+  @media (max-width: 900px) {
+    main { grid-template-columns: 1fr 1fr; }
+    .pipeline-card, .chart-card { grid-column: 1 / 3; }
+    .chart-2col { grid-column: 1 / 3; }
+  }
+
+  @media (max-width: 600px) {
+    main { grid-template-columns: 1fr; }
+    .pipeline-card, .chart-card, .chart-2col, .chart-1col { grid-column: 1; }
+    .risk-card { grid-row: auto; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">🌊</div>
+    <div class="logo-text">
+      <h1>FloodSense IoT</h1>
+      <p>Rainfall &amp; Water-Level Preprocessing System</p>
+    </div>
+  </div>
+  <div class="header-status">
+    <div class="status-dot" id="hdrDot"></div>
+    <span id="hdrStatus">Connecting…</span>
+  </div>
+</header>
+
+<main>
+
+  <!-- RISK METER -->
+  <div class="card risk-card" style="grid-column:1; grid-row:1 2;">
+    <div class="card-title">⚡ Flood Risk Score</div>
+    <div class="risk-score-ring">
+      <svg viewBox="0 0 140 140" width="140" height="140">
+        <circle cx="70" cy="70" r="58" fill="none" stroke="var(--border)" stroke-width="10"/>
+        <circle id="riskRing" cx="70" cy="70" r="58" fill="none"
+                stroke="var(--safe)" stroke-width="10"
+                stroke-linecap="round"
+                stroke-dasharray="364.4"
+                stroke-dashoffset="364.4"
+                style="transition: stroke-dashoffset 1s ease, stroke 0.5s;"/>
+      </svg>
+      <div class="risk-score-center">
+        <div class="risk-value" id="riskVal">--</div>
+        <div class="risk-label">/ 10</div>
+      </div>
+    </div>
+    <div class="alert-badge" id="alertBadge" style="background:rgba(90,122,154,0.2); color:var(--muted);">
+      AWAITING DATA
+    </div>
+    <div style="font-size:0.65rem; color:var(--muted); margin-top:0.5rem; font-family:var(--font-mono);" id="predMethod">method: —</div>
+  </div>
+
+  <!-- RAINFALL STAT -->
+  <div class="card stat-card" style="grid-column:2; grid-row:1;">
+    <div class="card-title">🌧 Rainfall Intensity</div>
+    <div class="stat-value" id="rainVal">--</div>
+    <div class="stat-unit">mm / hour</div>
+    <div class="stat-bar"><div class="stat-bar-fill" id="rainBar" style="width:0%;"></div></div>
+    <div style="font-size:0.7rem; color:var(--muted); margin-top:0.4rem; font-family:var(--font-mono);">
+      6h Accum: <span id="rain6h" style="color:var(--text);">--</span> mm
+    </div>
+  </div>
+
+  <!-- WATER LEVEL STAT -->
+  <div class="card stat-card" style="grid-column:3; grid-row:1;">
+    <div class="card-title">💧 Water Level</div>
+    <div class="stat-value" id="wlVal">--</div>
+    <div class="stat-unit">meters</div>
+    <div class="stat-bar"><div class="stat-bar-fill" id="wlBar" style="width:0%; background:linear-gradient(90deg,#0066ff,#00d4ff);"></div></div>
+    <div style="font-size:0.7rem; color:var(--muted); margin-top:0.4rem; font-family:var(--font-mono);">
+      Rise Rate: <span id="wlVel" style="color:var(--text);">--</span> m/10min
+    </div>
+  </div>
+
+  <!-- PIPELINE STATUS -->
+  <div class="card pipeline-card">
+    <div class="card-title">🔧 Preprocessing Pipeline</div>
+    <div class="btn-row">
+      <button class="btn primary" id="btnPreprocess" onclick="runPreprocess()">
+        <span class="spinner"></span> ▶ Run Preprocessing (48h)
+      </button>
+      <button class="btn" id="btnTrain" onclick="runTrain()" disabled>
+        <span class="spinner"></span> 🤖 Train ML Model
+      </button>
+      <button class="btn" id="btnPredict" onclick="runPredict()">
+        <span class="spinner"></span> 🔮 Predict Risk
+      </button>
+      <button class="btn" id="btnLive" onclick="refreshLive()">
+        🔄 Live Sensors
+      </button>
+    </div>
+    <div class="pipeline-steps" id="pipelineSteps">
+      <div class="pipe-step" id="pRaw">
+        <div class="pipe-step-icon">📡</div>
+        <div class="pipe-step-label">IoT Ingest</div>
+        <div class="pipe-step-count" id="pRawCount">—</div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-step" id="pImpute">
+        <div class="pipe-step-icon">🩹</div>
+        <div class="pipe-step-label">Imputation</div>
+        <div class="pipe-step-count" id="pImputeCount">—</div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-step" id="pOutlier">
+        <div class="pipe-step-icon">🚨</div>
+        <div class="pipe-step-label">Outlier Removal</div>
+        <div class="pipe-step-count" id="pOutlierCount">—</div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-step" id="pFeature">
+        <div class="pipe-step-icon">⚙️</div>
+        <div class="pipe-step-label">Feature Eng.</div>
+        <div class="pipe-step-count" id="pFeatureCount">—</div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-step" id="pNorm">
+        <div class="pipe-step-icon">📊</div>
+        <div class="pipe-step-label">Normalization</div>
+        <div class="pipe-step-count" id="pNormCount">—</div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-step" id="pWindow">
+        <div class="pipe-step-icon">🪟</div>
+        <div class="pipe-step-label">Sliding Window</div>
+        <div class="pipe-step-count" id="pWindowCount">—</div>
+      </div>
+    </div>
+    <div class="log-panel" id="logPanel">
+      <div class="log-line info"><span class="ts">[SYSTEM]</span> <span class="msg"> FloodSense IoT ready. Click ▶ Run Preprocessing to begin.</span></div>
+    </div>
+  </div>
+
+  <!-- CHART: TIME-SERIES -->
+  <div class="card chart-2col">
+    <div class="card-title">📈 Rainfall &amp; Water Level (12h)</div>
+    <div class="chart-container"><canvas id="tsChart"></canvas></div>
+  </div>
+
+  <!-- CHART: RISK SCORE -->
+  <div class="card chart-1col">
+    <div class="card-title">🔮 Flood Risk Score (12h)</div>
+    <div class="chart-container"><canvas id="riskChart"></canvas></div>
+  </div>
+
+  <!-- SENSORS -->
+  <div class="card" style="grid-column: 1 / 4;">
+    <div class="card-title">📡 Live Sensor Network</div>
+    <div class="sensor-grid" id="sensorGrid">
+      <div style="color:var(--muted); font-family:var(--font-mono); font-size:0.75rem;">
+        Click "Live Sensors" to load sensor data…
+      </div>
+    </div>
+  </div>
+
+  <!-- ML METRICS -->
+  <div class="card" style="grid-column: 1 / 2;">
+    <div class="card-title">🤖 ML Model Metrics</div>
+    <table class="metrics-table" id="metricsTable">
+      <tr><th>Metric</th><th>Value</th></tr>
+      <tr><td>RMSE</td><td id="mRmse">—</td></tr>
+      <tr><td>MAE</td><td id="mMae">—</td></tr>
+      <tr><td>R²</td><td id="mR2">—</td></tr>
+      <tr><td>Train Samples</td><td id="mTrain">—</td></tr>
+      <tr><td>Test Samples</td><td id="mTest">—</td></tr>
+    </table>
+  </div>
+
+  <!-- OUTLIER REPORT -->
+  <div class="card" style="grid-column: 2 / 4;">
+    <div class="card-title">🚨 Outlier Detection Report</div>
+    <div id="outlierReport" style="font-family:var(--font-mono); font-size:0.72rem; color:var(--muted);">
+      Run preprocessing to see outlier report.
+    </div>
+  </div>
+
+</main>
+
+<script>
+// ── Chart setup ──────────────────────────────────────────────────────────────
+
+const chartDefaults = {
+  responsive: true, maintainAspectRatio: false,
+  animation: { duration: 600 },
+  plugins: { legend: { labels: { color: '#5a7a9a', font: { family: 'Space Mono', size: 10 } } } },
+  scales: {
+    x: { ticks: { color: '#5a7a9a', font: { size: 9, family: 'Space Mono' }, maxTicksLimit: 8 },
+         grid: { color: 'rgba(26,48,80,0.6)' } },
+    y: { ticks: { color: '#5a7a9a', font: { size: 9, family: 'Space Mono' } },
+         grid: { color: 'rgba(26,48,80,0.6)' } },
+  }
+};
+
+const tsCtx = document.getElementById('tsChart').getContext('2d');
+const tsChart = new Chart(tsCtx, {
+  type: 'line',
+  data: {
+    labels: [],
+    datasets: [
+      { label: 'Rainfall (mm/hr)', data: [], borderColor: '#00d4ff', backgroundColor: 'rgba(0,212,255,0.08)', tension: 0.4, fill: true, yAxisID: 'rain' },
+      { label: 'Water Level (m)',  data: [], borderColor: '#0066ff', backgroundColor: 'rgba(0,102,255,0.08)', tension: 0.4, fill: false, yAxisID: 'wl' },
+    ]
+  },
+  options: { ...chartDefaults, scales: {
+    x: chartDefaults.scales.x,
+    rain: { type:'linear', position:'left', ticks:{color:'#5a7a9a',font:{size:9,family:'Space Mono'}}, grid:{color:'rgba(26,48,80,0.6)'} },
+    wl:   { type:'linear', position:'right', ticks:{color:'#5a7a9a',font:{size:9,family:'Space Mono'}}, grid:{drawOnChartArea:false} },
+  }}
+});
+
+const riskCtx = document.getElementById('riskChart').getContext('2d');
+const riskChart = new Chart(riskCtx, {
+  type: 'line',
+  data: {
+    labels: [],
+    datasets: [{
+      label: 'Risk Score', data: [],
+      borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.12)',
+      tension: 0.4, fill: true,
+      pointRadius: 0,
+    }]
+  },
+  options: { ...chartDefaults, scales: {
+    x: chartDefaults.scales.x,
+    y: { ...chartDefaults.scales.y, min: 0, max: 10 }
+  }}
+});
+
+// ── Logging ───────────────────────────────────────────────────────────────────
+
+function log(msg, type='info') {
+  const panel = document.getElementById('logPanel');
+  const ts = new Date().toISOString().substr(11,8);
+  const line = document.createElement('div');
+  line.className = `log-line ${type}`;
+  line.innerHTML = `<span class="ts">[${ts}]</span> <span class="msg"> ${msg}</span>`;
+  panel.appendChild(line);
+  panel.scrollTop = panel.scrollHeight;
+}
+
+// ── Pipeline Step Helpers ─────────────────────────────────────────────────────
+
+function setPipeStep(id, state, count='') {
+  const el = document.getElementById(id);
+  el.className = `pipe-step ${state}`;
+  const countEl = el.querySelector('.pipe-step-count');
+  if (countEl && count !== '') countEl.textContent = count;
+}
+
+function resetPipe() {
+  ['pRaw','pImpute','pOutlier','pFeature','pNorm','pWindow'].forEach(id => setPipeStep(id,'','—'));
+}
+
+// ── Risk Meter ────────────────────────────────────────────────────────────────
+
+function updateRiskMeter(score, alert, color, method) {
+  const ring = document.getElementById('riskRing');
+  const circumference = 364.4;
+  const offset = circumference - (score / 10) * circumference;
+  ring.style.strokeDashoffset = offset;
+  ring.style.stroke = color;
+
+  document.getElementById('riskVal').textContent = score.toFixed(1);
+  document.getElementById('riskVal').style.color = color;
+
+  const badge = document.getElementById('alertBadge');
+  badge.textContent = alert;
+  badge.style.background = color + '22';
+  badge.style.color = color;
+
+  document.getElementById('predMethod').textContent = `method: ${method || '—'}`;
+}
+
+// ── Actions ───────────────────────────────────────────────────────────────────
+
+async function runPreprocess() {
+  const btn = document.getElementById('btnPreprocess');
+  btn.classList.add('loading'); btn.disabled = true;
+  resetPipe();
+  log('Starting preprocessing pipeline (48h of sensor data)…', 'info');
+
+  try {
+    setPipeStep('pRaw', 'active');
+    const resp = await fetch('/api/preprocess?hours=48');
+    const data = await resp.json();
+    const s = data.stats;
+
+    setPipeStep('pRaw',     'done', s.raw_rows);
+    setPipeStep('pImpute',  'done', s.after_imputation);
+    setPipeStep('pOutlier', 'done', `${s.after_outlier_removal} (-${s.outliers_removed})`);
+    setPipeStep('pFeature', 'done', `${s.features_engineered} feats`);
+    setPipeStep('pNorm',    'done', '✓ Scaled');
+    setPipeStep('pWindow',  'done', s.windows_created);
+
+    log(`✓ Raw rows: ${s.raw_rows} | Outliers removed: ${s.outliers_removed} | Windows: ${s.windows_created}`, 'ok');
+
+    // Update stats
+    const l = data.latest;
+    if (l) {
+      document.getElementById('rainVal').textContent = l.rain_mean_mm_hr.toFixed(1);
+      document.getElementById('rain6h').textContent  = l.rain_accum_6h_mm.toFixed(1);
+      document.getElementById('wlVal').textContent   = l.wl_mean_m.toFixed(2);
+      document.getElementById('wlVel').textContent   = l.wl_velocity_m_per_10min.toFixed(4);
+      document.getElementById('rainBar').style.width = Math.min(100, l.rain_mean_mm_hr / 115 * 100) + '%';
+      document.getElementById('wlBar').style.width   = Math.min(100, l.wl_mean_m / 8 * 100) + '%';
+    }
+
+    // Update charts
+    const cd = data.chart_data;
+    const labels = cd.timestamps.map(t => t.substr(11,5));
+    tsChart.data.labels = labels;
+    tsChart.data.datasets[0].data = cd.rain_mean;
+    tsChart.data.datasets[1].data = cd.wl_mean;
+    tsChart.update();
+
+    riskChart.data.labels = labels;
+    riskChart.data.datasets[0].data = cd.risk_score;
+    riskChart.update();
+
+    document.getElementById('btnTrain').disabled = false;
+    log('Preprocessing complete. Click "Train ML Model" next.', 'ok');
+
+    // Auto fetch outlier report
+    fetchOutliers();
+
+  } catch(e) {
+    log('ERROR: ' + e.message, 'err');
+  }
+
+  btn.classList.remove('loading'); btn.disabled = false;
+}
+
+async function runTrain() {
+  const btn = document.getElementById('btnTrain');
+  btn.classList.add('loading'); btn.disabled = true;
+  log('Training Random Forest model on windowed data…', 'info');
+
+  try {
+    const resp = await fetch('/api/train', {method:'POST'});
+    const data = await resp.json();
+
+    if (data.error) { log('Error: '+data.error, 'err'); return; }
+
+    const m = data.metrics;
+    document.getElementById('mRmse').textContent  = m.rmse;
+    document.getElementById('mMae').textContent   = m.mae;
+    document.getElementById('mR2').textContent    = m.r2;
+    document.getElementById('mTrain').textContent = m.train_samples;
+    document.getElementById('mTest').textContent  = m.test_samples;
+
+    log(`✓ Model trained — R²: ${m.r2} | RMSE: ${m.rmse} | MAE: ${m.mae}`, 'ok');
+    runPredict();
+  } catch(e) {
+    log('ERROR: ' + e.message, 'err');
+  }
+
+  btn.classList.remove('loading'); btn.disabled = false;
+}
+
+async function runPredict() {
+  const btn = document.getElementById('btnPredict');
+  btn.classList.add('loading'); btn.disabled = true;
+  log('Requesting flood risk prediction…', 'info');
+
+  try {
+    const resp = await fetch('/api/predict');
+    const d = await resp.json();
+    updateRiskMeter(d.flood_risk_score, d.alert_level, d.color, d.method || 'heuristic');
+    document.getElementById('hdrStatus').textContent = `Alert: ${d.alert_level}`;
+    document.getElementById('hdrDot').style.background = d.color;
+    log(`✓ Risk score: ${d.flood_risk_score}/10 — ${d.alert_level} [±${d.confidence_upper - d.flood_risk_score}]`, 'ok');
+  } catch(e) {
+    log('ERROR: ' + e.message, 'err');
+  }
+
+  btn.classList.remove('loading'); btn.disabled = false;
+}
+
+async function refreshLive() {
+  log('Fetching live sensor readings…', 'info');
+  try {
+    const resp = await fetch('/api/sensors/live');
+    const data = await resp.json();
+    const grid = document.getElementById('sensorGrid');
+    grid.innerHTML = '';
+
+    const alertColor = { OK:'var(--safe)', FAULT:'var(--critical)', NORMAL:'var(--safe)', WARNING:'var(--warn)', DANGER:'var(--danger)', CRITICAL:'var(--critical)' };
+
+    [...data.rainfall_readings, ...data.water_level_readings].forEach(s => {
+      const isRain = s.sensor_type === 'rainfall';
+      const val  = isRain ? s.rainfall_mm_hr : s.water_level_m;
+      const unit = isRain ? 'mm/hr' : 'm';
+      const alert = s.alert || s.status;
+      const color = alertColor[alert] || 'var(--muted)';
+
+      const tile = document.createElement('div');
+      tile.className = 'sensor-tile';
+      tile.innerHTML = `
+        <div class="sid">${s.sensor_id} — ${isRain ? '🌧' : '💧'}</div>
+        <div class="loc">${s.location}</div>
+        <div class="val">${val !== null ? val : 'N/A'} <span class="unit">${unit}</span></div>
+        <div><span class="badge" style="background:${color}22; color:${color};">${alert}</span></div>
+        <div style="color:var(--muted);font-size:0.55rem;margin-top:3px;">🔋 ${s.battery_v}V · 📶 ${s.signal_dbm}dBm</div>
+      `;
+      grid.appendChild(tile);
+    });
+
+    document.getElementById('hdrStatus').textContent = 'Live · ' + new Date().toISOString().substr(11,8);
+    log(`✓ ${data.rainfall_readings.length + data.water_level_readings.length} sensors read`, 'ok');
+  } catch(e) {
+    log('ERROR: ' + e.message, 'err');
+  }
+}
+
+async function fetchOutliers() {
+  try {
+    const resp = await fetch('/api/outliers');
+    const data = await resp.json();
+    if (data.error) return;
+
+    const div = document.getElementById('outlierReport');
+    if (data.count === 0) {
+      div.innerHTML = '<span style="color:var(--safe);">✓ No outliers detected in this batch.</span>';
+      return;
+    }
+
+    let html = `<span style="color:var(--warn);">⚠ ${data.count} outliers detected and removed.</span><br><br>`;
+    html += '<table style="width:100%; border-collapse:collapse;">';
+    html += '<tr style="color:var(--muted)"><th style="text-align:left">Timestamp</th><th>Rain (mm/hr)</th><th>WL (m)</th></tr>';
+    data.samples.slice(0, 8).forEach(r => {
+      html += `<tr>
+        <td style="font-size:0.6rem; color:var(--muted);">${String(r.timestamp).substr(0,16)}</td>
+        <td style="text-align:center; color:var(--warn);">${r.rain_mean_mm_hr?.toFixed(1) ?? 'N/A'}</td>
+        <td style="text-align:center; color:var(--accent);">${r.wl_mean_m?.toFixed(2) ?? 'N/A'}</td>
+      </tr>`;
+    });
+    html += '</table>';
+    div.innerHTML = html;
+  } catch(e) {}
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+
+(async () => {
+  try {
+    const resp = await fetch('/api/health');
+    const data = await resp.json();
+    document.getElementById('hdrStatus').textContent = 'Connected · ' + data.timestamp.substr(11,8);
+    log('API health OK. System ready.', 'ok');
+  } catch(e) {
+    log('Cannot reach API. Is the Flask server running?', 'err');
+  }
+  refreshLive();
+})();
+</script>
+</body>
+</html>
