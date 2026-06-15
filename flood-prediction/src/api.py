@@ -7,6 +7,7 @@ import json
 import numpy as np
 from flask import Flask, jsonify, request, render_template
 from datetime import datetime
+import os
 
 from src.iot_sensors import IoTSensorNetwork
 from src.preprocessing import run_preprocessing_pipeline, FEATURE_COLS
@@ -21,7 +22,11 @@ _last_result = None
 
 
 def create_app():
-    app = Flask(__name__, template_folder="../templates", static_folder="../static")
+    # FIX: Use absolute path resolution for templates and static directories
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    app = Flask(__name__, 
+                template_folder=os.path.join(base_dir, "templates"),
+                static_folder=os.path.join(base_dir, "static"))
 
     # ── Serve Dashboard ──────────────────────────────────────────────────────
 
@@ -85,7 +90,7 @@ def create_app():
 
         return jsonify({"stats": stats, "latest": latest, "chart_data": chart_data})
 
-    # ── Train Model ───────────────────────────────────────────────────────────
+    # ── Train Model ─────────────────────────────────────────────────────────
 
     @app.route("/api/train", methods=["POST"])
     def train():
@@ -115,7 +120,7 @@ def create_app():
             )),
         })
 
-    # ── Predict ───────────────────────────────────────────────────────────────
+    # ── Predict ──────────────────────────────────────────────────────────
 
     @app.route("/api/predict", methods=["GET"])
     def predict():
@@ -136,6 +141,7 @@ def create_app():
         # Try ML model first, fall back to heuristic
         if _model is not None and _last_result is not None:
             X = _last_result.get("X")
+            # FIX: Added check for X not being None and having elements
             if X is not None and len(X) > 0:
                 prediction = predict_flood_risk(_model, X[-1])
                 prediction["method"] = "ml_model"
@@ -149,7 +155,7 @@ def create_app():
         )
         return jsonify(prediction)
 
-    # ── Outlier Report ────────────────────────────────────────────────────────
+    # ── Outlier Report ───────────────────────────────────────────────────────
 
     @app.route("/api/outliers", methods=["GET"])
     def outliers():
@@ -163,7 +169,7 @@ def create_app():
             r["timestamp"] = str(r.get("timestamp", ""))
         return jsonify({"count": len(df), "samples": records})
 
-    # ── Health Check ──────────────────────────────────────────────────────────
+    # ── Health Check ────────────────────────────────────────────────────────
 
     @app.route("/api/health", methods=["GET"])
     def health():
@@ -180,4 +186,5 @@ def create_app():
 def _safe_list(df, col):
     if col not in df.columns:
         return []
-    return [round(float(v), 3) if not np.isnan(v) else None for v in df[col].tolist()]
+    # FIX: Handle NaN values properly by checking np.isnan
+    return [round(float(v), 3) if (isinstance(v, (int, float)) and not np.isnan(v)) else None for v in df[col].tolist()]
